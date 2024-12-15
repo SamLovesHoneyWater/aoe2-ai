@@ -13,9 +13,6 @@ from utils import parse_llm_json
 from actions import *
 from GameAI import GameAI
 
-#pytesseract.pytesseract.tesseract_cmd = r'D:/Tesseract/tesseract.exe'
-
-
 GAMESCREEN_X0, GAMESCREEN_Y0 = 0, 75
 GAMESCREEN_X1, GAMESCREEN_Y1 = 1920, 1024
 
@@ -24,9 +21,8 @@ GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 genai.configure(api_key=GOOGLE_API_KEY)
 gemini_model = genai.GenerativeModel(model_name="gemini-1.5-pro")
 
-image_path = 'sample_images/continue_button_test.png'
-label_img = Image.open(image_path)
-label_img_np = np.array(label_img)
+image_paths = ['sample_images/continue_button_1.png', 'sample_images/continue_button_2.png']
+label_imgs = [np.array(Image.open(image_path)) for image_path in image_paths]
 
 def gemini_parse_image(img, prompt):
     response = gemini_model.generate_content([img, prompt])
@@ -34,7 +30,6 @@ def gemini_parse_image(img, prompt):
     return res
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-policy_model = GameAI().to(device)
 
 def get_screen(x0, y0, x1, y1):
     with mss.mss() as sct:
@@ -43,18 +38,32 @@ def get_screen(x0, y0, x1, y1):
         img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
     return img
 
-def is_killed():
+def is_killed(do_respawn=False):
     x0, y0 = 940, 725
     x1, y1 = 1103, 775
     img = get_screen(x0, y0, x1, y1)
     img_np = np.array(img)
-    diff = np.abs(label_img_np - img_np)
-    avg_diff = np.mean(diff)
-    return avg_diff
+    diff = np.abs(label_imgs[0] - img_np)
+    avg_diff_1 = np.mean(diff)
+    if avg_diff_1 < 10:
+        if do_respawn:
+            respawn(x0, y0, x1, y1)
+        return True
+    x0, y0 = 940, 770
+    x1, y1 = 1103, 820
+    img = get_screen(x0, y0, x1, y1)
+    img.save('continue_button_2.png')
+    img_np = np.array(img)
+    diff = np.abs(label_imgs[1] - img_np)
+    avg_diff_2 = np.mean(diff)
+    if avg_diff_2 < 10:
+        if do_respawn:
+            respawn(x0, y0, x1, y1)
+        return True
+    return False
+    
 
-def respawn():
-    x0, y0 = 940, 725
-    x1, y1 = 1103, 775
+def respawn(x0, y0, x1, y1):
     x, y = (x0 + x1) // 2, (y0 + y1) // 2
     xx, yy = 960, 925
     pyautogui.moveTo(x, y)
@@ -86,13 +95,11 @@ def get_game_scene():
     #img = img.convert('L')
     k = .2
     img = img.resize((int((GAMESCREEN_X1 - GAMESCREEN_X0) * k), int((GAMESCREEN_Y1 - GAMESCREEN_Y0) * k)), Image.Resampling.LANCZOS)
-    print(img.size)
     return img
 
 def get_action_ai(img):
     img = np.array(img)
     img = img.reshape(1, 3, img.shape[0], img.shape[1])
-    print(img.shape)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     img_tensor = torch.from_numpy(img).float().to(device)
     outputs = policy_model(img_tensor)
@@ -130,33 +137,51 @@ def countdown_with_message(t, msg):
     return
 
 if __name__ == '__main__':
+    
+    #'''
+    i = 0
+    while True:
+        time.sleep(0.5)
+        print("Press 'q' to start recording actions.")
+        while not keyboard.is_pressed('q'):
+            time.sleep(0.05)
+        stream = DataStream(filename=f'data/stream{i}/')
+
+        time.sleep(0.5)
+        #countdown_with_message(10, "Taking over controls")
+        print("\nGame started! Press 'q' to pause recording.")
+
+        while True:
+            t0 = time.time()
+            img = get_game_scene()
+            actions = get_human_action()
+            stream.put(actions, img)
+            dt = time.time() - t0
+            if dt < 0.1:
+                time.sleep(0.1 - dt)
+            #print(time.time() - t0)
+            if keyboard.is_pressed('q'):
+                stream.save()
+                print("Actions saved to action_stream.json.")
+                i += 1
+                break
+                #'''
+
+    policy_model = GameAI()
+    policy_model.load('model1_v1.pth')
+    policy_model = policy_model.to(device)
+
     print("All dependencies loaded.")
     use_gemini = False
-    countdown_with_message(3, "Taking over controls")
+
+    countdown_with_message(10, "Taking over controls")
     print("\nGame started! Press 'q' to pause AI control for 5 seconds.")
-
-    stream = DataStream(filename='data/stream0/')
-    while True:
-        t0 = time.time()
-        img = get_game_scene()
-        actions = get_human_action()
-        stream.put(actions, img)
-        dt = time.time() - t0
-        if dt < 0.1:
-            time.sleep(0.1 - dt)
-        print(time.time() - t0)
-        if keyboard.is_pressed('q'):
-            stream.save()
-            print("Actions saved to action_stream.json.")
-            raise KeyboardInterrupt
-
-
     while True:
         dt = 0
         t0 = time.time()
-        while is_killed() > 10:
+        while not is_killed():
             t = time.time()
-            if dt > 0 and t - t0 > dt:
+            if dt > 0 and t - t0 > dt and use_gemini:
                 t0 = t
                 score = get_ingame_score()["score"]
                 print(f"Score: {score}")
@@ -174,4 +199,4 @@ if __name__ == '__main__':
             print(f"Game over! Score: {stats['score']}, Level: {stats['level']}, Time: {stats['time']}")
         else:
             time.sleep(1)
-        respawn()
+        is_killed(do_respawn=True)

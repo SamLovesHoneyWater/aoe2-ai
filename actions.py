@@ -1,4 +1,6 @@
-import math, json, os
+import math, json, os, random
+from PIL import Image
+import numpy as np
 import keyboard, pyautogui
 import torch
 
@@ -49,15 +51,13 @@ class ActionSuite:
 class DataStream:
     def __init__(self, filename=None, load=False):
         self.stream = []
+        if filename is None:
+            filename = 'data/stream/'
+        elif not filename.endswith('/'):
+            filename += '/'
         if load:
-            if filename is None:
-                raise ValueError("Filename must be provided to load data.")
             self.load(filename)
         else:
-            if filename is None:
-                filename = 'data/stream/'
-            elif not filename.endswith('/'):
-                filename += '/'
             os.makedirs(filename, exist_ok=False)
         self.filename = filename
         
@@ -73,6 +73,24 @@ class DataStream:
             else:
                 raise ValueError(f"Tried to get {n} recent actions, but only {len(self.stream)} available. Set strict=False to get what's available.")
         return self.stream[-n:]
+    
+    def shuffle(self):
+        random.shuffle(self.stream)
+    
+    def iterate_batches(self, batch_size: int, device: torch.device):
+        offset = 0
+        while offset < len(self.stream):
+            if offset + batch_size > len(self.stream):
+                batch_data = self.stream[offset:]
+            else:
+                batch_data = self.stream[offset:offset + batch_size]
+            
+            x = torch.stack([torch.from_numpy(np.array(Image.open(self.filename + datapoint['img']))) for datapoint in batch_data]).to(device)
+            x = x.float() / 255.0
+            x = torch.permute(x, (0, 3, 1, 2))
+            y, continuous_mask = actions_to_labels([datapoint['actions'] for datapoint in batch_data], device)
+            yield x, y, continuous_mask
+            offset += batch_size
 
     def save(self):
         data = [
@@ -91,13 +109,13 @@ class DataStream:
         self.stream = [
             {
                 'actions': ActionSuite(
-                                    UpgradesAction(actions['upgrades']),
-                                    MovementAction(actions['x_velocity'], actions['y_velocity']),
-                                    ShootAction(actions['direction'], actions['do_shoot'])
+                                    UpgradesAction(datapoint['actions']['upgrades']),
+                                    MovementAction(datapoint['actions']['x_velocity'], datapoint['actions']['y_velocity']),
+                                    ShootAction(datapoint['actions']['direction'], datapoint['actions']['do_shoot'])
                                 ),
-                'img': img_filename
+                'img': datapoint['img']
             }
-            for actions, img_filename in self.stream
+            for datapoint in data
         ]
 
 
@@ -105,8 +123,8 @@ def output_to_actions(outputs):
     # Parse movement action
     x_velocity = torch.argmax(outputs['discrete1'], dim=1)
     y_velocity = torch.argmax(outputs['discrete2'], dim=1)
-    x_velocity = x_velocity.cpu().detach().numpy()[0]
-    y_velocity = y_velocity.cpu().detach().numpy()[0]
+    x_velocity = x_velocity.cpu().detach().numpy()[0] - 1
+    y_velocity = y_velocity.cpu().detach().numpy()[0] - 1
     movement_action = MovementAction(x_velocity, y_velocity)
     # Parse shoot action
     shoot_dir = outputs['continuous']
@@ -117,6 +135,33 @@ def output_to_actions(outputs):
     # Upgrade dummy
     upgrades_action = UpgradesAction([])
     return ActionSuite(upgrades_action, movement_action, shoot_action)
+
+def actions_to_labels(actions_list: list, device: torch.device):
+    # Create labels
+    batch_size = len(actions_list)
+    onehot, continuous, discrete1, discrete2 = [], [], [], []
+    continuous_mask = torch.ones(batch_size, 1).to(device)
+    for i, actions in enumerate(actions_list):
+        if actions.shoot_action.shoot:
+            onehot.append([1., 0.])
+        else:
+            onehot.append([0., 1.])
+        if actions.shoot_action.direction is None:
+            continuous_mask[i] = 0
+            continuous.append([0.])
+        else:
+            continuous.append([actions.shoot_action.direction])
+        discrete1.append(actions.movement_action.x_velocity + 1)
+        discrete2.append(actions.movement_action.y_velocity + 1)
+
+    labels = {
+        'onehot': torch.tensor(onehot).to(device),
+        'continuous': torch.tensor(continuous).to(device),
+        'discrete1': torch.tensor(discrete1).to(device),
+        'discrete2': torch.tensor(discrete2).to(device)
+    }
+    return labels, continuous_mask
+
 
 def apply_action(actions: ActionSuite):
     # Apply upgrades
