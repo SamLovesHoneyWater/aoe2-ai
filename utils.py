@@ -1,5 +1,5 @@
 from typing import Dict
-import json, os
+import json, os, time
 
 def parse_llm_json(llm_output: str) -> Dict:
     if llm_output[:3] == "```":
@@ -10,3 +10,9 @@ def parse_llm_json(llm_output: str) -> Dict:
 
 def list_folders(directory):
     return [name for name in os.listdir(directory)]
+
+def countdown_with_message(t, msg):
+    for i in range(t):
+        print(f"{msg} in {t - i} seconds...", end='\r')
+        time.sleep(1)
+    return
