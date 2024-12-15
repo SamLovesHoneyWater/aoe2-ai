@@ -2,10 +2,8 @@ import torch
 import time, keyboard
 import matplotlib.pyplot as plt
 
-from utils import countdown_with_message
-from actions import DataStream, apply_action
-from diep_utils import get_game_scene, get_human_action, get_action_ai, is_killed, release_all_keys, get_final_score, get_ingame_score
-from GameAI import GameAI
+from actions import DataStream
+from diep_utils import get_game_scene, get_human_action
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

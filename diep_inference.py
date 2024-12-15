@@ -3,7 +3,7 @@ import time, keyboard
 import matplotlib.pyplot as plt
 
 from utils import countdown_with_message
-from actions import DataStream, apply_action
+from actions import apply_action
 from diep_utils import get_game_scene, get_action_ai, is_killed, release_all_keys, get_final_score, get_ingame_score
 from GameAI import GameAI
 
