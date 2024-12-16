@@ -4,16 +4,16 @@ import matplotlib.pyplot as plt
 
 from utils import countdown_with_message
 from actions import apply_action
-from diep_utils import get_game_scene, get_action_ai, is_killed, release_all_keys, get_final_score, get_ingame_score
-from GameAI import GameAI
+from diep_utils import get_game_scene, get_ai_action, is_killed, release_all_keys, get_final_score, get_ingame_score
+from DQN import DQN
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 if __name__ == '__main__':
 
-    policy_model = GameAI()
-    policy_model.load('model1_v1.pth')
-    policy_model = policy_model.to(device)
+    model = DQN()
+    model.load('dqn_test.pth')
+    model = model.to(device)
 
     print("All dependencies loaded.")
     use_gemini = False
@@ -30,7 +30,7 @@ if __name__ == '__main__':
                 score = get_ingame_score()["score"]
                 print(f"Score: {score}")
             img = get_game_scene()
-            actions = get_action_ai(img, policy_model)
+            actions = get_ai_action(img, model)
             apply_action(actions)
             if keyboard.is_pressed('q'):
                 release_all_keys()

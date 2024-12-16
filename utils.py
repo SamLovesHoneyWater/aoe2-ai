@@ -1,5 +1,5 @@
 from typing import Dict
-import json, os, time
+import json, os, time, shutil
 
 def parse_llm_json(llm_output: str) -> Dict:
     if llm_output[:3] == "```":
@@ -16,3 +16,7 @@ def countdown_with_message(t, msg):
         print(f"{msg} in {t - i} seconds...", end='\r')
         time.sleep(1)
     return
+
+def delete_entire_folder(folder):
+    if os.path.exists(folder):
+        shutil.rmtree(folder)

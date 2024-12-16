@@ -2,6 +2,7 @@ from PIL import Image
 import numpy as np
 import mss, time, keyboard, pyautogui
 import torch
+import matplotlib.pyplot as plt
 
 from gemini_utils import gemini_parse_image
 from actions import ALL_KEYS, UpgradesAction, MovementAction, ShootAction, coords2dir, ActionSuite, output_to_actions
@@ -34,11 +35,12 @@ def get_game_scene():
 def is_killed(do_respawn=False):
     x0, y0 = 940, 725
     x1, y1 = 1103, 775
+    PIXEL_THRESHOLD = 1600
     img = get_screen(x0, y0, x1, y1)
     img_np = np.array(img)
     diff = np.abs(label_imgs[0] - img_np)
-    avg_diff_1 = np.mean(diff)
-    if avg_diff_1 < 10:
+    zero_pixels = np.sum(diff == 0)
+    if zero_pixels > PIXEL_THRESHOLD:
         if do_respawn:
             respawn(x0, y0, x1, y1)
         return True
@@ -46,9 +48,9 @@ def is_killed(do_respawn=False):
     x1, y1 = 1103, 820
     img = get_screen(x0, y0, x1, y1)
     img_np = np.array(img)
-    diff = np.abs(label_imgs[1] - img_np)
-    avg_diff_2 = np.mean(diff)
-    if avg_diff_2 < 10:
+    diff = np.abs(label_imgs[0] - img_np)
+    zero_pixels = np.sum(diff == 0)
+    if zero_pixels > PIXEL_THRESHOLD:
         if do_respawn:
             respawn(x0, y0, x1, y1)
         return True
@@ -65,11 +67,14 @@ def respawn(x0, y0, x1, y1):
     pyautogui.click()
     return
 
-def get_ingame_score():
-    prompt = "Parse the text in the image and output in the following json format:\n{\n\tscore: xxx\n}"
+def get_ingame_score_img():
     x0, y0 = 831, 957
     x1, y1 = 1100, 985
     img = get_screen(x0, y0, x1, y1)
+    return img
+
+def get_ingame_score(img):
+    prompt = "Parse the text in the image and output in the following json format:\n{\n\tscore: xxx\n}\nSet score to -1 if the score is not visible."
     stats = gemini_parse_image(img, prompt)
     return stats
 
@@ -81,12 +86,12 @@ def get_final_score():
     stats = gemini_parse_image(img, prompt)
     return stats
 
-def get_action_ai(img, policy_model):
+def get_ai_action(img, policy_model):
     img = np.array(img)
     img = img.reshape(1, 3, img.shape[0], img.shape[1])
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     img_tensor = torch.from_numpy(img).float().to(device)
-    outputs = policy_model(img_tensor)
+    outputs = policy_model.forward_policy(img_tensor)
     actions = output_to_actions(outputs)
     return actions
 
