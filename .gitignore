@@ -165,9 +165,10 @@ cython_debug/
 # Repository-specific ignores
 
 # Data
-data/
+data/*
+data_old/*
 
 # Trained models
-saved_models/
+saved_models/*
 BLIP/*
 try.py
